@@ -71,16 +71,15 @@ void calc_mean_stddev(const cv::Mat img, const cv::Mat mask) {
     cv::calcHist(&img, 1, 0, mask, hist, 1, &hist_size, hist_range, true, false);
 
     double mean = 0;
-    int cnt = 0;
+    int cnt = cv::sum(hist)[0];
     for (int i = 0; i < hist.size().height; i++) {
         mean += i * hist.at<float>(i);
-        cnt += hist.at<float>(i);
     }
     mean /= cnt;
 
     double stddev = 0;
     for (int i = 0; i < hist.size().height; i++) {
-        stddev += (hist.at<float>(i) - mean) * (hist.at<float>(i) - mean);
+        stddev += hist.at<float>(i) * (i - mean) * (i - mean);
     }
     stddev /= cnt;
 
@@ -104,16 +103,20 @@ int main(int argc, char* argv[]) {
         std::vector<cv::Mat> noised_images;
         cv::Mat img_hist;
         cv::Mat img = generate_sample(colors);
+        printf("For colors %.0f %.0f %.0f\n", colors[0], colors[1], colors[2]);
         for (int stddev: stddevs_arr){
             cv::Mat noised_img = add_noise(img, stddev);
+            printf("Real deviation %d\n", stddev);
             calc_mean_stddev(noised_img, kMaskSquareOuter);
             calc_mean_stddev(noised_img, kMaskSquareInner);
             calc_mean_stddev(noised_img, kMaskCircle);
+            printf("\n");
 
             cv::Mat hist_image = generate_hist(noised_img);
             cv::vconcat(noised_img, hist_image, noised_img);
             noised_images.push_back(noised_img);
         }
+        printf("\n");
         cv::vconcat(noised_images, img_hist);
         res_images.push_back(img_hist);
         sample_images.push_back(img);
@@ -126,10 +129,8 @@ int main(int argc, char* argv[]) {
     cv::hconcat(res_images,res_img);
     cv::vconcat(samples, res_img, res_img);
 
-    // calc_mean_stddev(res_img, cv::Mat());
-
     cv::imshow("lab02", res_img);
-    cv::imwrite("../prj.lab/lab02/res.png", res_img);
+    // cv::imwrite("../prj.lab/lab02/res.png", res_img);
     cv::waitKey(0);
     return 0;
 }

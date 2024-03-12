@@ -6,8 +6,47 @@
 
 uchar contrast(const uchar col, const uchar col_min_old, const uchar col_max_old,
                const uchar col_min_new, const uchar col_max_new) {
-  float res = col_min_new + (col - col_min_old) * (col_max_new - col_min_new) / (col_max_old - col_min_old);
+  float res = (col_min_new
+               + (col - col_min_old)
+               * (col_max_new - col_min_new)
+               / (col_max_old - col_min_old));
   return cvRound(res);
+}
+
+cv::Mat calc_hist(const cv::Mat img) {
+  cv::Mat hist;
+  int hist_size = 256;
+  float range[] = {0, 256};
+  const float* hist_range[] = {range};
+  cv::calcHist(&img, 1, 0, cv::Mat(), hist, 1, &hist_size, hist_range, true, false);
+  return hist;
+}
+
+std::pair<uchar, uchar> find_min_max(const cv::Mat img, double qb, double qw) {
+  uchar min = 0, max = 0;
+  cv::Mat hist = calc_hist(img);
+  int hist_sum = cv::sum(hist)[0];
+  long int acc_sum = 0;
+  for (int i = 0; i < hist.size().height; i++) {
+    if (hist.at<float>(i) > 0) {
+      acc_sum += hist.at<float>(i);
+    }
+    if (acc_sum >= qb * hist_sum) {
+      min = i;
+      break;
+    }
+  }
+  acc_sum = 0;
+  for (int i = hist.size().height - 1; i >= 0; i--) {
+    if (hist.at<float>(i) > 0) {
+      acc_sum += hist.at<float>(i);
+    }
+    if (acc_sum >= qw * hist_sum) {
+      max = i;
+      break;
+    }
+  }
+  return std::pair<uchar, uchar>(min, max);
 }
 
 cv::Mat generate_hist(const cv::Mat img) {
@@ -36,59 +75,73 @@ cv::Mat generate_hist(const cv::Mat img) {
   return hist_image_tmp;
 }
 
-cv::Mat calc_hist(const cv::Mat img) {
-  cv::Mat hist;
-  int hist_size = 256;
-  float range[] = {0, 256};
-  const float* hist_range[] = {range};
-  cv::calcHist(&img, 1, 0, cv::Mat(), hist, 1, &hist_size, hist_range, true, false);
-  return hist;
+
+void channel_contrast(cv::Mat& channel, const uchar black_cutoff, const uchar white_cutoff) {
+  uchar b_border = 0;
+  uchar w_border = 255;
+  for (int x = 0; x < channel.rows; x++) {
+    for(int y = 0; y < channel.cols; y++) {
+      if (channel.at<uchar>(x, y) <= black_cutoff){
+        channel.at<uchar>(x, y) = b_border;
+      }
+      else if(channel.at<uchar>(x,y) >= white_cutoff){
+        channel.at<uchar>(x, y) = w_border;
+      }
+      else {
+        channel.at<uchar>(x, y) = contrast(channel.at<uchar>(x, y), black_cutoff,
+                                           white_cutoff, b_border, w_border);
+      }
+    }
+  }
 }
 
 int main(int argc, char* argv[]) {
   const cv::String parser_keys = 
-  "{qb |0.2 |}"
-  "{qw |0.2 |}"
+  "{qb     |0.2|}"
+  "{qw     |0.2|}"
+  "{mode m |0  |}"
   ;
   cv::CommandLineParser parser(argc, argv, parser_keys);
-  double q1 = parser.get<double>("qb");
-  double q2 = parser.get<double>("qw");
+  double q1 = parser.get<float>("qb");
+  double q2 = parser.get<float>("qw");
+  int mode = parser.get<int>("mode");
 
-  cv::Mat swin = cv::imread("..\\prj.lab\\lab03\\swin.jpg");
-  // cv::Mat swin(256, 256, 0, cv::Scalar(255, 255, 255));
-
-  int col_cnt = 256;
-  uchar b_border = 0, w_border = 255;
-  int black_cutoff = cvRound(col_cnt * q1), white_cutoff = cvRound(col_cnt * (1 - q2));
-
+  cv::Mat swin = cv::imread("./../prj.lab/lab03/swin.jpg");
 
   std::vector<cv::Mat> channels;
   cv::split(swin, channels);
   cv::Mat hist;
+  // hist = generate_hist(channels[0]);
+  // cv::imshow("hist3", hist);
+  uchar black_cutoff = 255, white_cutoff = 0;
 
-  for (cv::Mat& channel: channels) {
-    for (int y = 0; y < channel.rows; y++) {
-      for(int x = 0; x < channel.cols; x++) {
-        if (channel.at<uchar>(x, y) <= black_cutoff){
-          channel.at<uchar>(x, y) = b_border;
-        }
-        else if(channel.at<uchar>(x,y) >= white_cutoff){
-          channel.at<uchar>(x, y) = w_border;
-        }
-        else {
-          channel.at<uchar>(x, y) = contrast(channel.at<uchar>(x, y), black_cutoff, white_cutoff, b_border, w_border);
-        }
+  if (mode == 1) {
+    for (cv::Mat& channel: channels) {
+      std::pair<uchar, uchar> cutoffs = find_min_max(channel, q1, q2);
+      if (cutoffs.first <= black_cutoff) {
+        black_cutoff = cutoffs.first;
+      } 
+      if (cutoffs.second >= white_cutoff) {
+        white_cutoff = cutoffs.second;
       }
     }
   }
 
-  cv::Mat res_img = swin.clone();
+  for (cv::Mat& channel: channels) {
+    if (mode != 1){
+      std::pair<uchar, uchar> cutoffs = find_min_max(channel, q1, q2);
+      black_cutoff = cutoffs.first; white_cutoff = cutoffs.second;
+    }
+    channel_contrast(channel, black_cutoff, white_cutoff);
+  }
+
+  cv::Mat res_img = cv::Mat(swin.size(), swin.type());
   cv::merge(channels, res_img);
 
-  hist = generate_hist(channels[0]);
-  cv::imshow("hist2", hist);
+  // hist = generate_hist(channels[0]);
+  // cv::imshow("hist2", hist);
 
   cv::hconcat(swin, res_img, res_img);
   cv::imwrite("swin.png", res_img);
-  cv::waitKey(0);
+  // cv::waitKey(0);
 }
