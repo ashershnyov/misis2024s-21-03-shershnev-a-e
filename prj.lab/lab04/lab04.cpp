@@ -10,6 +10,9 @@ double gC = 0;
 cv::Mat gSample, gBin;
 std::string gWindowName = "window";
 
+int gMinSize = 10, gMaxSize = 20;
+int gDenoise = 7;
+
 cv::Mat generate_sample(int circle_cnt, float size_min, float size_max,
                           uchar col_min, uchar col_max, float sigma) {
     cv::Mat sample(512, 512, 0, 10);
@@ -36,6 +39,11 @@ cv::Mat generate_sample(int circle_cnt, float size_min, float size_max,
     }
 
     cv::GaussianBlur(sample, sample, cv::Size(11, 11), sigma);
+
+    cv::Mat_<int> noise(sample.size());
+    cv::randn(noise, 0, 5);
+    sample += noise;
+
     return sample;
 }
 
@@ -46,16 +54,22 @@ cv::Mat treshold(const cv::Mat input, cv::AdaptiveThresholdTypes type, cv::Thres
     return bin;
 }
 
+bool filter_components(const int size) {
+    return (size > 0.9 * CV_PI * gMinSize * gMinSize && size < 1.1 * CV_PI * gMaxSize * gMaxSize);
+}
+
 cv::Mat detect(const cv::Mat bin_img) {
     cv::Mat detected = bin_img.clone();
-    // cv::GaussianBlur(detected, detected, cv::Size(5, 5), 0);
+    cv::GaussianBlur(detected, detected, cv::Size(gDenoise, gDenoise), 0);
 
     cv::Mat labels, stats, centroids;
     cv::connectedComponentsWithStats(bin_img, labels, stats, centroids, 8);
 
     cv::Mat mask = cv::Mat(detected.size(), 0, 0.0);
     for (int i = 1; i < stats.rows; i++) {
-        mask += (labels == i);
+        if (filter_components(stats.at<int>(i, cv::CC_STAT_AREA))){
+            mask += (labels == i);
+        }
     }
 
     cv::Mat contours;
@@ -124,6 +138,27 @@ void change_type(int pos, void*) {
     // draw_frame(gWindowName, gSample, gBin);
 }
 
+void change_min_size(int pos, void*) {
+    gMinSize = pos;
+    draw_frame(gWindowName, gSample, gBin);
+}
+
+void change_max_size(int pos, void*) {
+    gMaxSize = pos;
+    draw_frame(gWindowName, gSample, gBin);
+}
+
+void change_blur_core(int pos, void*) {
+    if (pos <= 3) {
+        gDenoise = 3;
+    }
+    else if (pos % 2 == 0) 
+        gDenoise = pos + 1;
+    else
+        gDenoise = pos;
+    draw_frame(gWindowName, gSample, gBin);
+}
+
 void create_window(int type) {
     cv::destroyWindow(gWindowName);
     cv::namedWindow(gWindowName);
@@ -134,8 +169,8 @@ void create_window(int type) {
         int inv = int(gInverse), atype = int(gType), bsize = gBlockSize;
         cv::createTrackbar("Treshold type", gWindowName, &atype, 1, change_type_adaptive);
         cv::createTrackbar("Inverse", gWindowName, &inv, 1, change_inverse);
-        cv::createTrackbar("Block size", gWindowName, &bsize, 20, change_block_size);
-        cv::createTrackbar("Constant", gWindowName, &c, 100, change_constant);
+        cv::createTrackbar("Block size", gWindowName, &bsize, 200, change_block_size);
+        cv::createTrackbar("Constant", gWindowName, &c, 300, change_constant);
     }
     // Для обычной бинаризации
     else if (type == 1) {
@@ -143,7 +178,11 @@ void create_window(int type) {
         int rtype = int(gInverse);
         cv::createTrackbar("Treshold type", gWindowName, &rtype, 1, change_type);
     }
-
+    int min_size = gMinSize, max_size = gMaxSize;
+    int core = gDenoise;
+    cv::createTrackbar("Denoising blur core", gWindowName, &core, 30, change_blur_core);
+    cv::createTrackbar("Detect min size", gWindowName, &min_size, 100, change_min_size);
+    cv::createTrackbar("Detect max size", gWindowName, &max_size, 200, change_max_size);
 }
 
 int main() {
