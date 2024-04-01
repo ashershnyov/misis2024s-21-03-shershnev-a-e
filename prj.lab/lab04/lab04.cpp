@@ -90,6 +90,11 @@ std::vector<std::vector<double>> ious_fill(const std::vector<cv::Mat> masks) {
 
 void calc_stats(const std::vector<std::vector<double>> iou_matrix,
                 const double treshold, int &TP, int &FP, int &FN) {
+    if (iou_matrix.size() == 0)
+        return;
+    if (iou_matrix[0].size() == 0)
+        return;
+
     for (int i = 0; i < iou_matrix.size(); i++) {
         bool fp = 1;
         for (int j = 0; j < iou_matrix[0].size(); j++) {
