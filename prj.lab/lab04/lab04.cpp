@@ -2,6 +2,8 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui.hpp>
 #include <iostream>
+#include <string>
+#include <sstream>
 
 cv::AdaptiveThresholdTypes gType = cv::ADAPTIVE_THRESH_GAUSSIAN_C;
 cv::ThresholdTypes gInverse = cv::THRESH_BINARY;
@@ -14,7 +16,8 @@ int gMinSize = 10, gMaxSize = 20;
 int gDenoise = 7;
 
 std::vector<std::tuple<cv::Point, int>> true_circles;
-cv::Mat true_img;
+
+std::vector<cv::Mat> true_masks;
 
 cv::Mat generate_sample(int circle_cnt, float size_min, float size_max,
                           uchar col_min, uchar col_max, float sigma) {
@@ -34,6 +37,10 @@ cv::Mat generate_sample(int circle_cnt, float size_min, float size_max,
             cv::ellipse(sample, circle_center, circle_size, 0, 0, 360, col_min, cv::FILLED);
 
             true_circles.push_back(std::tuple<cv::Point, int>(circle_center, size_cur));
+
+            cv::Mat true_mask = cv::Mat(sample.size(), 0, 0.0);
+            cv::ellipse(true_mask, circle_center, circle_size, 0, 0, 360, 255, cv::FILLED);
+            true_masks.push_back(true_mask);
 
             size_cur += size_step;
         }
@@ -61,15 +68,6 @@ bool filter_components(const int size) {
     return (size > 0.9 * CV_PI * gMinSize * gMinSize && size < 1.1 * CV_PI * gMaxSize * gMaxSize);
 }
 
-cv::Mat gen_true_img(const cv::Size sample_size) {
-    cv::Mat img = cv::Mat(sample_size, 0);
-    for (auto& circle: true_circles) {
-        int rad = std::get<1>(circle);
-        cv::ellipse(img, std::get<0>(circle), cv::Size(rad, rad), 0, 0, 360, 255, cv::FILLED);
-    }
-    return img;
-}
-
 double calc_iou(const cv::Mat mask, const cv::Mat ref_mask) {
     double in, un;
     cv::Mat res;
@@ -81,21 +79,12 @@ double calc_iou(const cv::Mat mask, const cv::Mat ref_mask) {
 }
 
 std::vector<std::vector<double>> ious_fill(const std::vector<cv::Mat> masks) {
-    cv::Mat labels;
-    true_img = gen_true_img(cv::Size(512, 512));
-    cv::connectedComponents(true_img, labels, 8);
-
-    // cv::Mat res_mask = cv::Mat(cv::Size(512, 512), 0, 0.0);
-
     std::vector<std::vector<double>> iou_matrix(masks.size(), std::vector<double>(true_circles.size(), 0.0));
     for (int i = 0; i < masks.size(); i++) {
         for (int j = 0; j < true_circles.size(); j++) {
-            cv::Mat mask = (labels == j + 1);
-            // res_mask += (labels == j + 1);
-            iou_matrix[i][j] = calc_iou(masks[i], mask);
+            iou_matrix[i][j] = calc_iou(masks[i], true_masks[j]);
         }
     }
-    // cv::imshow("resmat", res_mask);
     return iou_matrix;
 }
 
@@ -135,16 +124,22 @@ cv::Mat detect_connected_components(const cv::Mat bin_img) {
     cv::Mat labels, stats, centroids;
     cv::connectedComponentsWithStats(bin_img, labels, stats, centroids, 8);
 
-    cv::Mat mask = cv::Mat(detected.size(), 0, 0.0);
-    cv::Mat detect_mask = mask.clone();
+    cv::Mat detect_mask = cv::Mat(detected.size(), 0, 0.0);
     std::vector<cv::Mat> masks;
     for (int i = 1; i < stats.rows; i++) {
         if (filter_components(stats.at<int>(i, cv::CC_STAT_AREA))){
-            mask = (labels == i);
+            cv::Mat mask = (labels == i);
             detect_mask += (labels == i);
             masks.push_back(mask);
         }
     }
+
+    // for (int i = 0; i < masks.size(); i++) {
+    //     std::stringstream name;
+    //     name << "name" << i;
+    //     cv::imshow(name.str(), masks[i]);
+    // }
+
 
     std::vector<std::vector<double>> ious;
     ious = ious_fill(masks);
@@ -295,7 +290,6 @@ void create_window(int type) {
 }
 
 int main() {
-    true_img = gen_true_img(cv::Size(512, 512));
     int c = gC * 20;
     int inv = int(gInverse), type = int(gType), bsize = gBlockSize;
     gSample = generate_sample(6, 10, 20, 30, 127, 20);
