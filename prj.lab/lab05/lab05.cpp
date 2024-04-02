@@ -5,7 +5,7 @@
 
 int main() {
     int rect_side = 99, rect_cnt = 3, rows = 2, circle_radius = 25;
-    cv::Mat1b sample(rect_side * rows, rect_side * rect_cnt);
+    cv::Mat1f sample(rect_side * rows, rect_side * rect_cnt);
     std::vector<cv::Vec2b> colors{
         cv::Vec2b{0, 127},
         cv::Vec2b{127, 0},
@@ -26,7 +26,7 @@ int main() {
             cv::ellipse(sample, center, cv::Size(circle_radius, circle_radius), 0, 0, 360, color[1], cv::FILLED);
         }
     }
-    cv::Mat1b sample_k1 = sample.clone(), sample_k2 = sample.clone();
+    cv::Mat1f sample_k1 = sample.clone(), sample_k2 = sample.clone();
     cv::Mat kernel1 = (cv::Mat1f(2, 2) << 1.0, 0.0, 0.0, -1.0);
     cv::filter2D(sample, sample_k1, -1, kernel1, cv::Point(-1, -1), 0, cv::BORDER_DEFAULT);
 
@@ -35,13 +35,16 @@ int main() {
 
     cv::Mat1f s1_tmp = sample_k1.clone(), s2_tmp = sample_k2.clone(), s3_tmp = s2_tmp.clone();
 
+    s1_tmp = s1_tmp * 0.5 + 127.5;
+    s2_tmp = s2_tmp * 0.5 + 127.5;
     cv::sqrt(s1_tmp.mul(s1_tmp) + s2_tmp.mul(s2_tmp), s3_tmp);
 
-    std::vector<cv::Mat1f> channels{s1_tmp, s2_tmp, s3_tmp};
-    cv::Mat3f res;
+    cv::Mat1b s1 = s1_tmp.clone(), s2 = s2_tmp.clone(), s3 = s3_tmp.clone();
+
+    std::vector<cv::Mat1b> channels{s3, s2, s1};
+    cv::Mat3b res;
     cv::merge(channels, res);
     cv::imshow("res", res);
-
     cv::waitKey(0);
     return 0;
 }
