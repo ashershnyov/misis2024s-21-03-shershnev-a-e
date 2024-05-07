@@ -15,7 +15,7 @@ std::string gWindowName = "window";
 int gMinSize = 10, gMaxSize = 20;
 int gDenoise = 7;
 
-std::vector<std::tuple<cv::Point, int>> true_circles;
+std::vector<std::tuple<cv::Point, int, uchar>> true_circles;
 
 std::vector<cv::Mat> true_masks;
 
@@ -36,7 +36,7 @@ cv::Mat generate_sample(int circle_cnt, float size_min, float size_max,
             cv::Size circle_size = cv::Size(size_cur, size_cur);
             cv::ellipse(sample, circle_center, circle_size, 0, 0, 360, col_min, cv::FILLED);
 
-            true_circles.push_back(std::tuple<cv::Point, int>(circle_center, size_cur));
+            true_circles.push_back(std::tuple<cv::Point, int, uchar>(circle_center, size_cur, col_min));
 
             cv::Mat true_mask = cv::Mat(sample.size(), 0, 0.0);
             cv::ellipse(true_mask, circle_center, circle_size, 0, 0, 360, 255, cv::FILLED);
@@ -47,6 +47,22 @@ cv::Mat generate_sample(int circle_cnt, float size_min, float size_max,
 
         col_min += col_step;
     }
+
+    cv::FileStorage true_json("true.json", cv::FileStorage::WRITE);
+    true_json << "data" << "{";
+    true_json << "objects" << "[";
+    for(std::tuple<cv::Point, int, uchar> circle: true_circles) {
+        true_json << "{";
+        true_json << "p" << std::vector<int>{std::get<0>(circle).x, std::get<0>(circle).y, std::get<1>(circle)};
+        // true_json << std::get<1>(circle);
+        true_json << "c" << std::get<2>(circle);
+        true_json << "}";
+    }
+    true_json << "]";
+    true_json << "background" << "{";
+    true_json << "size" << "[" << sample.rows << sample.cols << "]";
+    true_json << "}";
+    true_json.release();
 
     // cv::GaussianBlur(sample, sample, cv::Size(11, 11), sigma);
 
@@ -90,6 +106,7 @@ std::vector<std::vector<double>> ious_fill(const std::vector<cv::Mat> masks) {
 
 void calc_stats(const std::vector<std::vector<double>> iou_matrix,
                 const double treshold, int &TP, int &FP, int &FN) {
+
     if (iou_matrix.size() == 0)
         return;
     if (iou_matrix[0].size() == 0)
@@ -122,6 +139,25 @@ void calc_stats(const std::vector<std::vector<double>> iou_matrix,
     }
 }
 
+void draw_detection(cv::Mat& img, const std::vector<cv::Mat> masks) {
+    for (cv::Mat mask: masks) {
+        std::vector<std::vector<cv::Point>> cont, to_draw;
+        cv::findContours(mask, cont, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
+        int size_max = 0, size_max_idx = 0;
+        for(int i = 0; i < cont.size(); i++) {
+            if (cont[i].size() > size_max) {
+                size_max = cont[i].size();
+                size_max_idx = i;
+            }
+        }
+        to_draw.push_back(cont[size_max_idx]);
+        cv::Point2f enc_center;
+        float enc_radius;
+        cv::minEnclosingCircle(to_draw[0], enc_center, enc_radius);
+        cv::circle(img, enc_center, enc_radius, cv::Vec3b{255, 0, 255}, 2);
+    }
+}
+
 cv::Mat detect_connected_components(const cv::Mat bin_img) {
     cv::Mat detected = bin_img.clone();
     cv::GaussianBlur(detected, detected, cv::Size(gDenoise, gDenoise), 0);
@@ -139,13 +175,6 @@ cv::Mat detect_connected_components(const cv::Mat bin_img) {
         }
     }
 
-    // for (int i = 0; i < masks.size(); i++) {
-    //     std::stringstream name;
-    //     name << "name" << i;
-    //     cv::imshow(name.str(), masks[i]);
-    // }
-
-
     std::vector<std::vector<double>> ious;
     ious = ious_fill(masks);
 
@@ -153,29 +182,27 @@ cv::Mat detect_connected_components(const cv::Mat bin_img) {
     calc_stats(ious, 0.5, tp, fp, fn);
 
     std::cout << tp << " " << fp << " " << fn << "\n";
-
-    cv::Mat contours;
-    detect_mask = (detect_mask > 0) * 255;
-    cv::Canny(detect_mask, contours, 0, 255);
     cv::cvtColor(detected, detected, cv::COLOR_GRAY2RGB);
-    for (int x = 0; x < contours.rows; x++) {
-        for (int y = 0; y < contours.cols; y++) {
-            if (contours.at<uchar>(x, y) > 0) {
-                detected.at<cv::Vec3b>(x, y) = cv::Vec3b(255, 0, 255);
-            }
-        }
-    }
+
+    draw_detection(detected, masks);
 
     return detected;
 }
 
 cv::Mat detect_laplacian(const cv::Mat input) {
     cv::Mat detected = input.clone();
-    // cv::normalize(detected, detected, 255, cv::NORM_MINMAX);
+    // cv::normalize(detected, detected, 0, 255, cv::NORM_MINMAX);
     cv::GaussianBlur(detected, detected, cv::Size(gDenoise, gDenoise), 0);
     cv::Mat output;
-    cv::Laplacian(detected, output, CV_16S, 11);
-    return output;
+    cv::Laplacian(detected, output, CV_32F, 11);
+    double min, max;
+    cv::minMaxLoc(output, &min, &max);
+    std::cout << min << " " << max << "\n";
+    output = output * 0.5 + 0.5 * max;
+    cv::Mat3b cl = output.clone();
+    cv::minMaxLoc(cl, &min, &max);
+    std::cout << min << " " << max << "\n";
+    return cl;
 }
 
 void draw_frame(const std::string window_name, const cv::Mat input, const cv::Mat output) {
@@ -304,7 +331,7 @@ int main() {
     gBin = treshold(gSample, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY, 5, 0);
 
     draw_frame(gWindowName, gSample, gBin);
-
     cv::waitKey(0);
+
     return 0;
 }
