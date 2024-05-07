@@ -102,14 +102,15 @@ void draw_detection(cv::Mat& img, const std::vector<cv::Vec3f> circles) {
     }
 }
 
-cv::Mat detect_hough(cv::Mat img, int dist_denominator = 16, int min_radius = 3, int max_radius = 20) {
+cv::Mat detect_hough(cv::Mat img, int dist_denominator = 16, int min_radius = 3,
+                     int max_radius = 20, int p1 = 35, int p2 = 50) {
     cv::Mat detected = img.clone();
     int denoise = 7;
     cv::GaussianBlur(detected, detected, cv::Size(denoise, denoise), 0);
 
     std::vector<cv::Vec3f> circles;
     float distance = detected.rows / dist_denominator;
-    cv::HoughCircles(detected, circles, cv::HOUGH_GRADIENT, 2, distance, 100, 100, min_radius, max_radius);
+    cv::HoughCircles(detected, circles, cv::HOUGH_GRADIENT, 2, distance, p1, p2, min_radius, max_radius);
 
     cv::Mat converted;
     cv::cvtColor(img, converted, cv::COLOR_GRAY2RGB);
@@ -120,7 +121,7 @@ cv::Mat detect_hough(cv::Mat img, int dist_denominator = 16, int min_radius = 3,
 
 int main() {
     cv::Mat gSample = generate_sample(6, 10, 20, 30, 127, 20);
-    cv::Mat detected = detect_hough(gSample);
+    cv::Mat detected = detect_hough(gSample, 12, 3, 100, 35, 50);
     cv::Mat concat_img;
     cv::cvtColor(gSample, concat_img, cv::COLOR_GRAY2RGB);
     cv::hconcat(concat_img, detected, concat_img);
