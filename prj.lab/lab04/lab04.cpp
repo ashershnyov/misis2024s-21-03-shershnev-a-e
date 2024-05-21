@@ -19,7 +19,7 @@ std::vector<std::tuple<cv::Point, int, uchar>> true_circles;
 
 std::vector<cv::Mat> true_masks;
 
-void extract_data_from_json(const std::string fname, std::vector<std::tuple<cv::Point, int, uchar>>& circles){
+void extract_data_from_json(const std::string fname){
     cv::FileStorage json(fname, 0);
     cv::FileNode root = json["data"];
     cv::FileNode objects = root["objects"];
@@ -342,7 +342,7 @@ int main() {
     int c = gC * 20;
     int inv = int(gInverse), type = int(gType), bsize = gBlockSize;
     gSample = generate_sample(6, 10, 20, 30, 127, 20);
-    extract_data_from_json("true.json", true_circles);
+    extract_data_from_json("true.json");
     gBin = gSample.clone();
     create_window(0);
 
