@@ -5,6 +5,27 @@
 std::vector<std::tuple<cv::Point, int, uchar>> true_circles;
 std::vector<cv::Mat> true_masks;
 
+void extract_data_from_json(const std::string fname){
+    cv::FileStorage json(fname, 0);
+    cv::FileNode root = json["data"];
+    cv::FileNode objects = root["objects"];
+    cv::FileNode bg = root["background"]["size"];
+
+    for(int i = 0; i < objects.size(); i++){
+        cv::FileNode circ = objects[i]["p"];
+        cv::FileNode col = objects[i]["c"];
+
+        cv::Mat true_mask = cv::Mat(cv::Size(bg[0].real(), bg[1].real()), 0, 0.0);
+        cv::Point circle_center = cv::Point{(int)circ[0].real(),
+                                            (int)circ[1].real()};
+        cv::Size circle_size = cv::Size(circ[2].real(), circ[2].real());
+        cv::ellipse(true_mask, circle_center, circle_size, 0, 0, 360, 255, cv::FILLED);
+        true_masks.push_back(true_mask);
+    }
+
+    json.release();
+}
+
 cv::Mat generate_sample(int circle_cnt, float size_min, float size_max,
                           uchar col_min, uchar col_max, float sigma) {
     cv::Mat sample(512, 512, 0, 10);
@@ -23,10 +44,6 @@ cv::Mat generate_sample(int circle_cnt, float size_min, float size_max,
             cv::ellipse(sample, circle_center, circle_size, 0, 0, 360, col_min, cv::FILLED);
 
             true_circles.push_back(std::tuple<cv::Point, int, uchar>(circle_center, size_cur, col_min));
-
-            cv::Mat true_mask = cv::Mat(sample.size(), 0, 0.0);
-            cv::ellipse(true_mask, circle_center, circle_size, 0, 0, 360, 255, cv::FILLED);
-            true_masks.push_back(true_mask);
 
             size_cur += size_step;
         }
@@ -121,6 +138,7 @@ cv::Mat detect_hough(cv::Mat img, int dist_denominator = 16, int min_radius = 3,
 
 int main() {
     cv::Mat gSample = generate_sample(6, 10, 20, 30, 127, 20);
+    extract_data_from_json("true.json");
     cv::Mat detected = detect_hough(gSample, 12, 3, 100, 35, 50);
     cv::Mat concat_img;
     cv::cvtColor(gSample, concat_img, cv::COLOR_GRAY2RGB);
