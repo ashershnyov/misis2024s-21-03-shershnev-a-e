@@ -7,12 +7,12 @@
 
 cv::AdaptiveThresholdTypes gType = cv::ADAPTIVE_THRESH_GAUSSIAN_C;
 cv::ThresholdTypes gInverse = cv::THRESH_BINARY;
-int gBlockSize = 143;
-double gC = -10.9;
+int gBlockSize = 167;
+double gC = -7.1;
 cv::Mat gSample, gBin;
 std::string gWindowName = "window";
 
-int gMinSize = 10, gMaxSize = 20;
+int gMinSize = 5, gMaxSize = 40;
 int gDenoise = 7;
 
 std::vector<std::tuple<cv::Point, int, uchar>> true_circles;
@@ -65,7 +65,7 @@ cv::Mat generate_sample(int circle_cnt, float size_min, float size_max,
         col_min += col_step;
     }
 
-    cv::FileStorage true_json("true.json", cv::FileStorage::WRITE);
+    cv::FileStorage true_json("lab04_0.json", cv::FileStorage::WRITE);
     true_json << "data" << "{";
     true_json << "objects" << "[";
     for(std::tuple<cv::Point, int, uchar> circle: true_circles) {
@@ -81,7 +81,7 @@ cv::Mat generate_sample(int circle_cnt, float size_min, float size_max,
     true_json << "}";
     true_json.release();
 
-    // cv::GaussianBlur(sample, sample, cv::Size(11, 11), sigma);
+    // cv::GaussianBlur(sample, sample, cv::Size(5, 5), sigma);
 
     cv::Mat_<int> noise(sample.size());
     cv::randn(noise, 0, 5);
@@ -230,6 +230,7 @@ void draw_frame(const std::string window_name, const cv::Mat input, const cv::Ma
     cv::hconcat(concat_img, detected_c, concat_img);
     // cv::hconcat(concat_img, detected_l, concat_img);
     cv::imshow(window_name, concat_img);
+    cv::imwrite("lab04_0.png", concat_img);
     // cv::imshow(window_name, detected_l);
 }
 
@@ -339,14 +340,13 @@ void create_window(int type) {
 }
 
 int main() {
-    int c = gC * 20;
-    int inv = int(gInverse), type = int(gType), bsize = gBlockSize;
     gSample = generate_sample(6, 10, 20, 30, 127, 20);
-    extract_data_from_json("true.json");
+    cv::imwrite("lab04_0_s.png", gSample);
+    extract_data_from_json("lab04_0.json");
     gBin = gSample.clone();
     create_window(0);
 
-    gBin = treshold(gSample, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY, 5, 0);
+    gBin = treshold(gSample, gType, gInverse, gBlockSize, gC);
 
     draw_frame(gWindowName, gSample, gBin);
     cv::waitKey(0);
