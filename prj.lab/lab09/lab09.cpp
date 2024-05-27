@@ -39,6 +39,40 @@ cv::Mat generate_hist(const cv::Mat img) {
   return hist_image_tmp;
 }
 
+uchar srgb_to_linrgb(float color) {
+    color /= 255.f;
+    if (color <= 0.04045) {
+        return uchar(255 * color / 12.92f);
+    } else {
+        return uchar(255 * cv::pow((color + 0.055) / 1.055f, 2.4));
+    }
+}
+
+void mat_to_linrgb(cv::Mat& img) {
+    for (int x = 0; x < img.cols; x++) {
+        for (int y = 0; y < img.rows; y++) {
+            img.at<uchar>(x, y) = srgb_to_linrgb(img.at<uchar>(x, y));
+        }
+    }
+}
+
+uchar linrgb_to_srgb(float color) {
+    color /= 255.f;
+    if (color <= 0.0031308) {
+        return uchar (255 * 12.92 * color);
+    } else {
+        return uchar (255 * 1.055 * (cv::pow(color, 1 / 2.4) - 0.055));
+    }
+}
+
+void mat_to_srgb(cv::Mat& img) {
+    for (int x = 0; x < img.cols; x++) {
+        for (int y = 0; y < img.rows; y++) {
+            img.at<uchar>(x, y) = linrgb_to_srgb(img.at<uchar>(x, y));
+        }
+    }
+}
+
 int main() {
     cv::Mat img = cv::imread("./../prj.lab/lab09/swin.jpg");
     std::vector<cv::Mat> channels;
@@ -56,12 +90,14 @@ int main() {
     float gray = 0.0;
 
     for (cv::Mat channel: channels) {
+        mat_to_linrgb(channel);
         means.push_back(cv::mean(channel)[0]);
     }
 
     for (int i = 0; i < channels.size(); i++) {
         // channels[i] *= means[i] / cv::mean(means)[0];
         channels[i] *= cv::mean(means)[0] / means[i];
+        mat_to_srgb(channels[i]);
     }
 
     hist_1 = generate_hist(channels[0]);
