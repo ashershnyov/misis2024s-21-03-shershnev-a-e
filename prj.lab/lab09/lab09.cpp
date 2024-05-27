@@ -79,13 +79,13 @@ int main() {
     cv::split(img, channels);
     std::vector<float> means;
 
-    cv::Mat hist_1 = generate_hist(channels[0]);
-    cv::Mat hist_2 = generate_hist(channels[1]);
-    cv::Mat hist_3 = generate_hist(channels[2]);
-    cv::Mat hist;
-    cv::merge(std::vector<cv::Mat>{hist_1, hist_2, hist_3}, hist);
+    // cv::Mat hist_1 = generate_hist(channels[0]);
+    // cv::Mat hist_2 = generate_hist(channels[1]);
+    // cv::Mat hist_3 = generate_hist(channels[2]);
+    // cv::Mat hist;
+    // cv::merge(std::vector<cv::Mat>{hist_1, hist_2, hist_3}, hist);
 
-    cv::vconcat(img, hist, img);
+    // cv::vconcat(img, hist, img);
 
     float gray = 0.0;
 
@@ -100,14 +100,14 @@ int main() {
         mat_to_srgb(channels[i]);
     }
 
-    hist_1 = generate_hist(channels[0]);
-    hist_2 = generate_hist(channels[1]);
-    hist_3 = generate_hist(channels[2]);
+    // hist_1 = generate_hist(channels[0]);
+    // hist_2 = generate_hist(channels[1]);
+    // hist_3 = generate_hist(channels[2]);
 
-    cv::merge(std::vector<cv::Mat>{hist_1, hist_2, hist_3}, hist);
+    // cv::merge(std::vector<cv::Mat>{hist_1, hist_2, hist_3}, hist);
     cv::Mat res_img;
     cv::merge(channels, res_img);
-    cv::vconcat(res_img, hist, res_img);
+    // cv::vconcat(res_img, hist, res_img);
     cv::hconcat(img, res_img, res_img);
     cv::imshow("swin", res_img);
     cv::waitKey(0);
