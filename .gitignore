@@ -3,3 +3,4 @@ build
 build.sh
 bin*
 /*/output
+.DS_Store
