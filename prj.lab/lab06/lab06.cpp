@@ -1,9 +1,14 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui.hpp>
+#include <iostream>
 
 std::vector<std::tuple<cv::Point, int, uchar>> true_circles;
 std::vector<cv::Mat> true_masks;
+
+std::vector<std::pair<float, float>> froc_curve_points;
+
+float gFrocArea = 0.0;
 
 void extract_data_from_json(const std::string fname){
     cv::FileStorage json(fname, 0);
@@ -69,9 +74,9 @@ double calc_iou(const cv::Mat mask, const cv::Mat ref_mask) {
 }
 
 std::vector<std::vector<double>> ious_fill(const std::vector<cv::Mat> masks) {
-    std::vector<std::vector<double>> iou_matrix(masks.size(), std::vector<double>(true_circles.size(), 0.0));
+    std::vector<std::vector<double>> iou_matrix(masks.size(), std::vector<double>(true_masks.size(), 0.0));
     for (int i = 0; i < masks.size(); i++) {
-        for (int j = 0; j < true_circles.size(); j++) {
+        for (int j = 0; j < true_masks.size(); j++) {
             iou_matrix[i][j] = calc_iou(masks[i], true_masks[j]);
         }
     }
@@ -119,6 +124,28 @@ void draw_detection(cv::Mat& img, const std::vector<cv::Vec3f> circles) {
     }
 }
 
+float calc_area() {
+    float area = 0.0;
+    for (int i = 1; i < froc_curve_points.size(); i++) {
+        area += ((froc_curve_points[i].second - froc_curve_points[i - 1].second)
+                 * (froc_curve_points[i].first + froc_curve_points[i - 1].first)
+                 / 2.f);
+    }
+    return area;
+}
+
+float froc(std::vector<std::vector<double>> ious, int det_num) {
+    for (float treshold = 0.2; treshold < 1; treshold += 0.1) {
+        int tp = 0, fp = 0, fn = 0;
+        calc_stats(ious, treshold, tp, fp, fn);
+        float sens = float(tp) / true_masks.size();
+        float avg_fp = float(fp) / det_num;
+        froc_curve_points.push_back(std::pair<float, float>{sens, avg_fp});
+    }
+    float area = calc_area();
+    return area;
+}
+
 cv::Mat detect_hough(cv::Mat img, int dist_denominator = 16, int min_radius = 3,
                      int max_radius = 20, int p1 = 35, int p2 = 50) {
     cv::Mat detected = img.clone();
@@ -131,19 +158,38 @@ cv::Mat detect_hough(cv::Mat img, int dist_denominator = 16, int min_radius = 3,
 
     cv::Mat converted;
     cv::cvtColor(img, converted, cv::COLOR_GRAY2RGB);
-    draw_detection(converted, circles);
+
+    std::vector<cv::Mat> masks;
+    for (auto circle: circles) {
+        cv::Mat mask(img.size(), CV_8U);
+        cv::circle(mask, cv::Point(circle[0], circle[1]), circle[2], 255, cv::FILLED);
+        masks.push_back(mask);
+    }
+
+    std::vector<std::vector<double>> ious = ious_fill(masks);
+    gFrocArea = froc(ious, masks.size());
 
     return converted;
 }
 
 int main() {
-    cv::Mat gSample = generate_sample(6, 10, 20, 30, 127, 20);
-    extract_data_from_json("true.json");
+    // cv::Mat gSample = generate_sample(6, 10, 20, 30, 127, 20);
+    cv::Mat3b sample = cv::imread("./../assets/lab04/lab04_5_s.png");
+    std::vector<cv::Mat1b> chan;
+    cv::split(sample, chan);
+
+    cv::Mat1b gSample = chan[0];
+
+    extract_data_from_json("./../assets/lab04/lab04_5.json");
     cv::Mat detected = detect_hough(gSample, 12, 3, 100, 35, 50);
     cv::Mat concat_img;
     cv::cvtColor(gSample, concat_img, cv::COLOR_GRAY2RGB);
     cv::hconcat(concat_img, detected, concat_img);
-    cv::imshow("hough", concat_img);
+    cv::imwrite("lab06_5.png", concat_img);
+    for (std::pair<float, float> point: froc_curve_points) {
+        std::cout << "x:" << point.first << " y:" << point.second << "\n";
+    }
+    std::cout << "froc:" << gFrocArea << "\n";
     cv::waitKey(0);
     return 0;
 }
