@@ -16,4 +16,4 @@ link_directories( ${OpenCV_LIB_DIR} )
 message(STATUS ${OpenCV_INCLUDE_DIRS})
 
 add_subdirectory(prj.lab)
-#add_subdirectory(prj.cw)
+add_subdirectory(prj.cw)
