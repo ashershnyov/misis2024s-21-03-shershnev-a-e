@@ -76,7 +76,13 @@ void mat_to_srgb(cv::Mat& img) {
 int main() {
     // cv::Mat img = cv::imread("./../prj.lab/lab09/swin.jpg");
     cv::Mat img = cv::imread("test_l09.jpg");
-    std::vector<cv::Mat> channels;
+    std::vector<cv::Mat> channels, channels_masked;
+    cv::Mat img_masked_table  = img.clone();
+    std::vector<cv::Point> table_to_mask = {cv::Point{38, 534}, cv::Point{211, 538},
+                                            cv::Point{206, 793}, cv::Point{31, 791}};
+    cv::fillPoly(img_masked_table, table_to_mask, 0, 4);
+    cv::imwrite("masked_table.png", img_masked_table);
+    cv::split(img_masked_table, channels_masked);
     cv::split(img, channels);
     std::vector<float> means;
 
@@ -84,8 +90,11 @@ int main() {
 
     std::vector<cv::Mat1b> hists;
 
-    for (cv::Mat channel: channels) {
+    for (cv::Mat channel: channels_masked) {
         means.push_back(cv::mean(channel)[0]);
+    }
+
+    for (cv::Mat channel: channels) {
         mat_to_linrgb(channel);
     }
 
