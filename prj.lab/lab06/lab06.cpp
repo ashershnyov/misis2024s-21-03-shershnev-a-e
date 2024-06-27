@@ -2,6 +2,7 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui.hpp>
 #include <iostream>
+#include <set>
 
 std::vector<std::tuple<cv::Point, int, uchar>> true_circles;
 std::vector<cv::Mat> true_masks;
@@ -73,49 +74,17 @@ double calc_iou(const cv::Mat mask, const cv::Mat ref_mask) {
     return double(in) / double(un);
 }
 
-std::vector<std::vector<double>> ious_fill(const std::vector<cv::Mat> masks) {
-    std::vector<std::vector<double>> iou_matrix(masks.size(), std::vector<double>(true_masks.size(), 0.0));
+std::vector<float> ious_fill(const std::vector<cv::Mat> masks) {
+    std::vector<float> ious(masks.size());
     for (int i = 0; i < masks.size(); i++) {
+        float max_iou = 0;
         for (int j = 0; j < true_masks.size(); j++) {
-            iou_matrix[i][j] = calc_iou(masks[i], true_masks[j]);
+            float iou = calc_iou(masks[i], true_masks[j]);
+            if (iou > max_iou) max_iou = iou;
         }
+        ious[i] = max_iou;
     }
-    return iou_matrix;
-}
-
-void calc_stats(const std::vector<std::vector<double>> iou_matrix,
-                const double treshold, int &TP, int &FP, int &FN) {
-
-    if (iou_matrix.size() == 0)
-        return;
-    if (iou_matrix[0].size() == 0)
-        return;
-
-    for (int i = 0; i < iou_matrix.size(); i++) {
-        bool fp = 1;
-        for (int j = 0; j < iou_matrix[0].size(); j++) {
-            if (iou_matrix[i][j] > treshold) {
-                fp = 0;
-                break;
-            }
-        }
-        if (fp)
-            FP += 1;
-    }
-
-    for (int i = 0; i < iou_matrix[0].size(); i++) {
-        bool tp = 0;
-        for (int j = 0; j < iou_matrix.size(); j++) {
-            if (iou_matrix[j][i] > treshold) {
-                tp = 1;
-                break;
-            }
-        }
-        if (tp)
-            TP += 1;
-        else
-            FN += 1;
-    }
+    return ious;
 }
 
 void draw_detection(cv::Mat& img, const std::vector<cv::Vec3f> circles) {
@@ -134,16 +103,52 @@ float calc_area() {
     return area;
 }
 
-float froc(std::vector<std::vector<double>> ious, int det_num) {
-    for (float treshold = 0.2; treshold < 1; treshold += 0.1) {
-        int tp = 0, fp = 0, fn = 0;
-        calc_stats(ious, treshold, tp, fp, fn);
-        float sens = float(tp) / true_masks.size();
-        float avg_fp = float(fp) / det_num;
-        froc_curve_points.push_back(std::pair<float, float>{sens, avg_fp});
+std::vector<float> calc_det_scores(const std::vector<cv::Vec3f> circles) {
+    std::vector<float> scores(circles.size());
+    for (int i = 0; i < circles.size(); i++) {
+        float sc = 1.f;
+        std::vector<float> w;
+        for (int j = 0; j < circles.size(); j++) {
+            if (j == i) continue;
+            float we = cv::abs(float(circles[i][2]) - float(circles[j][2])) * (-1.) / cv::max(circles[i][2], circles[j][2]);
+            w.push_back(we);
+        }
+        std::sort(w.begin(), w.end());
+        for (int j = 0; j < w.size(); j++) {
+            sc += w[j] / cv::pow(3, j + 1);
+        }
+        scores[i] = sc;
     }
-    float area = calc_area();
-    return area;
+    return scores;
+}
+
+void froc(std::vector<float> ious, int det_num, std::vector<float> scores, float iou_threshold) {
+    float fp_total = 0, tp_ratio = 0;
+    std::set<float> scores_set(scores.begin(), scores.end());
+    std::vector<float> sorted_scores(scores_set.begin(), scores_set.end());
+    std::vector<float> thresholds(sorted_scores.size());
+    thresholds[0] = -0.1;
+    for (int i = 1; i < thresholds.size(); i++) {
+        thresholds[i] = (sorted_scores[i - 1] + sorted_scores[i]) / 2.f;
+    }
+    thresholds.push_back(1.1);
+    std::sort(thresholds.rbegin(), thresholds.rend());
+
+    for (float threshold: thresholds) {
+        int tp = 0, fp = 0;
+        for (int i = 0; i < det_num; i++) {
+            if (scores[i] < threshold) {
+                continue;
+            }
+            if (ious[i] > iou_threshold) {
+                tp += 1;
+                continue;
+            }
+            fp += 1;
+        }
+        // std::cout << "X: " << fp << " Y: " << float(tp) / det_num << "\n\n";
+        froc_curve_points.push_back(std::pair<float, float>{fp, float(tp) / det_num});
+    }
 }
 
 cv::Mat detect_hough(cv::Mat img, int dist_denominator = 16, int min_radius = 3,
@@ -166,30 +171,38 @@ cv::Mat detect_hough(cv::Mat img, int dist_denominator = 16, int min_radius = 3,
         masks.push_back(mask);
     }
 
-    std::vector<std::vector<double>> ious = ious_fill(masks);
-    gFrocArea = froc(ious, masks.size());
+    cv::imwrite("lab06_mask_one.png", masks[0]);
+
+    std::vector<float> scores = calc_det_scores(circles);
+    std::vector<float> ious = ious_fill(masks);
+    froc(ious, masks.size(), scores, 0.82);
 
     return converted;
 }
 
 int main() {
     // cv::Mat gSample = generate_sample(6, 10, 20, 30, 127, 20);
-    cv::Mat3b sample = cv::imread("./../assets/lab04/lab04_5_s.png");
+    cv::Mat3b sample = cv::imread("./../assets/lab04/lab04_1_s.png");
     std::vector<cv::Mat1b> chan;
     cv::split(sample, chan);
 
     cv::Mat1b gSample = chan[0];
 
-    extract_data_from_json("./../assets/lab04/lab04_5.json");
+    extract_data_from_json("./../assets/lab04/lab04_1.json");
     cv::Mat detected = detect_hough(gSample, 12, 3, 100, 35, 50);
     cv::Mat concat_img;
     cv::cvtColor(gSample, concat_img, cv::COLOR_GRAY2RGB);
     cv::hconcat(concat_img, detected, concat_img);
     cv::imwrite("lab06_5.png", concat_img);
-    for (std::pair<float, float> point: froc_curve_points) {
-        std::cout << "x:" << point.first << " y:" << point.second << "\n";
+    std::cout << "X: [";
+    for (int i = 0; i < froc_curve_points.size(); i++) {
+        std::cout << froc_curve_points[i].first << ", ";
     }
-    std::cout << "froc:" << gFrocArea << "\n";
-    cv::waitKey(0);
+    std::cout << "]" << std::endl << "Y: [";
+    for (int i = 0; i < froc_curve_points.size(); i++) {
+        std::cout << froc_curve_points[i].second << ", ";
+    }
+    std::cout << "]";
+    // cv::waitKey(0);
     return 0;
 }
