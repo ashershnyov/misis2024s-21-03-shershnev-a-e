@@ -112,9 +112,9 @@ double calc_iou(const cv::Mat mask, const cv::Mat ref_mask) {
 }
 
 std::vector<std::vector<double>> ious_fill(const std::vector<cv::Mat> masks) {
-    std::vector<std::vector<double>> iou_matrix(masks.size(), std::vector<double>(true_circles.size(), 0.0));
+    std::vector<std::vector<double>> iou_matrix(masks.size(), std::vector<double>(true_masks.size(), 0.0));
     for (int i = 0; i < masks.size(); i++) {
-        for (int j = 0; j < true_circles.size(); j++) {
+        for (int j = 0; j < true_masks.size(); j++) {
             iou_matrix[i][j] = calc_iou(masks[i], true_masks[j]);
         }
     }
@@ -153,6 +153,20 @@ void calc_stats(const std::vector<std::vector<double>> iou_matrix,
             TP += 1;
         else
             FN += 1;
+    }
+}
+
+void calc_per_pixel_stats(const cv::Mat &det, const cv::Mat &truth, int &tp, int &fp, int &fn) {
+    for (int i = 0; i < det.rows; i++) {
+        for (int j = 0; j < det.cols; j++) {
+            if (truth.at<uchar>(j, i) > 0 && det.at<uchar>(j, i) > 0) {
+                tp++;
+            } else if (truth.at<uchar>(j, i) == 0 && det.at<uchar>(j, i) > 0) {
+                fp++;
+            } else if (truth.at<uchar>(j, i) > 0 && det.at<uchar>(j, i) == 0) {
+                fn++;
+            }
+        }
     }
 }
 
@@ -200,6 +214,22 @@ cv::Mat detect_connected_components(const cv::Mat bin_img) {
 
     std::cout << tp << " " << fp << " " << fn << "\n";
     cv::cvtColor(detected, detected, cv::COLOR_GRAY2RGB);
+
+    tp = 0; fn = 0; fp = 0;
+    cv::Mat det_masks = cv::Mat1b(detected.size(), 0);
+    for(int i = 0; i < masks.size(); i++) {
+        cv::bitwise_or(det_masks, masks[i], det_masks);
+    }
+    cv::Mat gt_masks = cv::Mat1b(detected.size(), 0);
+    for(int i = 0; i < true_masks.size(); i++) {
+        cv::bitwise_or(gt_masks, true_masks[i], gt_masks);
+    }
+    calc_per_pixel_stats(det_masks, gt_masks, tp, fp, fn);
+    std::cout << tp << " " << fp << " " << fn << "\n\n";
+    // cv::hconcat(gt_masks, det_masks, det_masks);
+    cv::imwrite("lab07_04_5.png", det_masks);
+    // cv::imwrite("lab06_compare_det.png", gt_masks);
+
 
     draw_detection(detected, masks);
 
@@ -341,10 +371,15 @@ void create_window(int type) {
 
 int main() {
     gSample = generate_sample(6, 10, 20, 30, 127, 20);
-    cv::imwrite("lab04_0_s.png", gSample);
-    extract_data_from_json("lab04_0.json");
+    cv::Mat3b sample = cv::imread("./../assets/lab04/lab04_5_s.png");
+    std::vector<cv::Mat1b> chan;
+    cv::split(sample, chan);
+
+    cv::Mat1b gSample = chan[0];
+    // cv::imwrite("lab04_1_s.png", gSample);
+    extract_data_from_json("../prj.lab/lab04/test_data/lab04_5.json");
     gBin = gSample.clone();
-    create_window(0);
+    // create_window(0);
 
     gBin = treshold(gSample, gType, gInverse, gBlockSize, gC);
 
