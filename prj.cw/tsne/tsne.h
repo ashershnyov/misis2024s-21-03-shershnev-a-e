@@ -129,13 +129,15 @@ class tsne {
             cv::Mat res = cv::Mat::ones(data.rows, this->out_dims_, CV_32F);
             learning_rate = this->learning_rate_ * cv::Mat::ones(res.size(), res.type());
 
-            std::random_device rd;
-            std::mt19937 gen(rd());
-            std::normal_distribution<float> dist(0, 0.0001);
+            // std::random_device rd;
+            // std::mt19937 gen(rd());
+            // std::normal_distribution<float> dist(0, 0.0001);
 
-            for (int i = 0; i < res.rows; i++)
-                for (int j = 0; j < res.cols; j++)
-                    res.at<float>(i, j) = dist(gen);
+            // for (int i = 0; i < res.rows; i++)
+            //     for (int j = 0; j < res.cols; j++)
+            //         res.at<float>(i, j) = dist(gen);
+            cv::RNG rng(43);
+            cv::randn(res, 0, 0.0001);
 
             this->calcQMatrix(res);
 
@@ -146,9 +148,9 @@ class tsne {
             res_prevs.push(res);
             for(int t = 0; t < this->max_steps_; t++) {
                 cv::Mat grad = cv::Mat::zeros(res.rows, res.cols, CV_32F);
-                if (t < 450) 
+                if (t < 0.1 * this->max_steps_) 
                     alpha = 0.9;
-                else alpha = 0.35;
+                else alpha = 0.5;
 
                 for (int i = 0; i < res.rows; i++) {
                     cv::Mat grad_row = cv::Mat::zeros(1, res.cols, CV_32F);
@@ -169,7 +171,7 @@ class tsne {
                     grad_row.copyTo(grad.row(i));
                 }
                 grad *= 4;
-                if (t < 150)
+                if (t < 0.1 * this->max_steps_)
                     grad += 0.001 * res;
                 learning_rate += this->gamma_ * grad.mul(grad_prev);
                 grad_prev = grad.clone();

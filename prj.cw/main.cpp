@@ -6,9 +6,56 @@
 #include <matplot/matplot.h>
 #include <algorithm>
 #include <set>
+#include <fstream>
 
 #include "tsne/tsne.h"
 
+int gPerClassPoints = 100;
+int gClasses = 10;
+
+void write_errors(std::vector<float> errors, std::string filename) {
+    std::ofstream file(filename);
+    file << std::fixed << std::setprecision(3);
+    file << "K=1:        " << errors[0] << "\n";
+    file << "K=3:        " << errors[1] << "\n";
+    file << "K=5:        " << errors[2] << "\n";
+    file << "K=7:        " << errors[3] << "\n";
+    file << "K=9:        " << errors[4] << "\n";
+    file.close();
+}
+
+cv::Mat draw_poins(const cv::Mat_<float> points, std::vector<cv::Vec4b> colors, int h, int w) {
+    if (points.cols != 2) {
+        throw("points must be 2-dim");
+    }
+    cv::Mat img(h, w, CV_8UC3, cv::Scalar{255, 255, 255});
+    double min_x = 0, min_y = 0, max_x = 0, max_y;
+    cv::minMaxLoc(points.col(0), &min_x, &max_x);
+    cv::minMaxLoc(points.col(1), &min_y, &max_y);
+
+    cv::Mat alphas = cv::Mat::zeros(h, w, CV_32F);
+    float alpha = 1.0 / gPerClassPoints * 10;
+    for(int i = 0; i < points.rows; i++) {
+        cv::Vec2f point = points.row(i);
+        int point_x = int(w * (point[0] - min_x) / (max_x - min_x));
+        int point_y = h - int(h * (point[1] - min_y) / (max_y - min_y));
+        alphas.at<float>(point_x, point_y) += alpha;
+    }
+    double min_alpha, max_alpha;
+    cv::minMaxLoc(alphas, &min_alpha, &max_alpha);
+    alpha /= max_alpha;
+    for (int i = 0; i < points.rows; i++) {
+        cv::Vec2f point = points.row(i);
+        int point_x = int(w * (point[0] - min_x) / (max_x - min_x));
+        int point_y = h - int(h * (point[1] - min_y) / (max_y - min_y));
+
+        cv::Mat tmp_to_add = img.clone();
+
+        cv::circle(tmp_to_add, cv::Point{point_x, point_y}, h / 128, cv::Vec4f(colors[i / gPerClassPoints]), cv::FILLED, cv::FILLED);
+        cv::addWeighted(tmp_to_add, alpha, img, 1 - alpha, 0.0, img);
+    }
+    return img;
+}
 
 // считает евклидовы расстояния между точками для knn
 cv::Mat_<float> calc_dist_mat(const cv::Mat_<float> points) {
@@ -152,7 +199,6 @@ cv::Mat pca(cv::Mat& data, int num_components) {
     return reduced_data;
 }
 
-
 // Вычисляет процент корректных предсказаний на основе 1-соседного knn
 float calc_prediction_q(const cv::Mat &data, std::vector<int> classes, int k) {
     int points_count = data.rows;
@@ -170,9 +216,21 @@ float calc_prediction_q(const cv::Mat &data, std::vector<int> classes, int k) {
     return float(correct_guesses) / points_count;
 }
 
-
 int main(int argc, char *argv[]) {
     std::vector<int> col;
+    std::vector<float> class_col;
+    std::vector<cv::Vec4b> colors = {
+        cv::Vec4b{230, 159, 0},
+        cv::Vec4b{86, 180, 233},
+        cv::Vec4b{0, 158, 115},
+        cv::Vec4b{240, 228, 66},
+        cv::Vec4b{0, 114, 178}, 
+        cv::Vec4b{204, 121, 167},
+        cv::Vec4b{178, 34, 34},
+        cv::Vec4b{34, 139, 34},
+        cv::Vec4b{53, 80, 93},
+        cv::Vec4b{0, 0, 0}
+    };
 
     cv::CommandLineParser parser(argc, argv,
         "{n |2  |}"
@@ -188,15 +246,15 @@ int main(int argc, char *argv[]) {
     std::string test_root = "../prj.cw/train_set/";
 
     int dim = 28;
-    int folders = 10, files = 100;
 
     cv::Mat data;
     std::vector<cv::Mat> imgs;
-    for (int folder_ = 0; folder_ < folders; folder_++) {
+    for (int folder_ = 0; folder_ < gClasses; folder_++) {
         char current_path[255];
         int n = 0;
+        class_col.push_back(folder_);
         n = sprintf(current_path, "%s%i/", test_root.c_str(), folder_);
-        for (int file_ = 1; file_ < files; file_++) {
+        for (int file_ = 1; file_ < gPerClassPoints; file_++) {
             col.push_back(folder_);
             char file_path[255];
             n = sprintf(file_path, "%s%i.png", current_path, file_);
@@ -225,26 +283,61 @@ int main(int argc, char *argv[]) {
 
     tsne TSNE(reduced_data, n, perplexity, learning_rate, gamma);
 
+    std::vector<float> errors;
+    for (int k = 1; k < 11; k += 2) {
+        float tsne_error = calc_prediction_q(TSNE.res, col, k);
+        errors.push_back(tsne_error);
+    }
+    write_errors(errors, "tsne_error.txt");
+
+    // std::cout << TSNE.res << "\n";
+    std::vector<std::pair<float, float>> points;
+    std::vector<double> points_x, points_y;
+    class_col = std::vector<float>();
+    matplot::hold(matplot::on);
+    for (int i = 0; i < gClasses; i++) {
+        class_col = std::vector<float>();
+        points_x = std::vector<double>();
+        points_y = std::vector<double>();
+        for (int point = i * gPerClassPoints; point < (i + 1) * gPerClassPoints; point++) {
+            class_col.push_back(i);
+            cv::Vec2f cur_point = TSNE.res.at<cv::Vec2f>(point);
+            points_x.push_back(cur_point[0]);
+            points_y.push_back(cur_point[1]);
+        }
+        // matplot::scatter(points_x, points_y)->marker_face(true).use_y2(true);
+        auto sc = matplot::scatter(points_x, points_y, std::vector<double>{});
+        sc->marker_face(true);
+        sc->marker_color({float(colors[i][0]), float(colors[i][1]), float(colors[i][2])});
+        sc->marker_face_color({float(colors[i][0]), float(colors[i][1]), float(colors[i][2])});
+    }
+    matplot::hold(matplot::off);
+    
+    // for (int point = 0; point < TSNE.res.rows; point++) {
+    //     cv::Vec2f cur_point = TSNE.res.at<cv::Vec2f>(point);
+    //     points_x.push_back(cur_point[0]);
+    //     points_y.push_back(cur_point[1]);
+    // }
+
+    cv::Mat img = draw_poins(TSNE.res, colors, 1024, 1024);
+    // cv::Mat_<float> po = (cv::Mat_<float>(6, 2) << (-2, -2, 2, 2, 2, -2, -2, 2, 0, 0, 1, 1));
+    // cv::Mat img = draw_poins(po, colors, 1024, 1024);
+    cv::imshow("img", img);
+    cv::imwrite("tsne.png", img);
+
+    matplot::legend({"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"})
+        ->location(matplot::legend::general_alignment::topleft);
+
+    // auto sc = matplot::scatter(points_x, points_y, std::vector<double>{}, col);
+    // sc->marker_face(true);
+
+    // std::pair<float, float> g = calc_lcmc(data, TSNE.res, 50);
+    // std::cout << g.first << " " << g.second << "\n\n";
+    matplot::save("plot1.png");
     for (int k = 1; k < 11; k += 2) {
         float tsne_error = calc_prediction_q(TSNE.res, col, k);
         std::cout << tsne_error << " ";
     }
-
-    // std::cout << TSNE.res << "\n";
-    std::vector<std::pair<float, float>> points;
-    std::vector<float> points_x, points_y;
-    for (int point = 0; point < TSNE.res.rows; point++) {
-        cv::Vec2f cur_point = TSNE.res.at<cv::Vec2f>(point);
-        points_x.push_back(cur_point[0]);
-        points_y.push_back(cur_point[1]);
-    }
-
-
-    auto sc = matplot::scatter(points_x, points_y, 6, col);
-    sc->marker_face(true);
-    // matplot::show();
-    // std::pair<float, float> g = calc_lcmc(data, TSNE.res, 50);
-    // std::cout << g.first << " " << g.second << "\n\n";
-    matplot::save("plot1.png");
+    cv::waitKey(0);
     return 0;
 }
